@@ -1,14 +1,15 @@
-
 import sys
+from datetime import datetime
 
 from festival import (
+    FestivalError,
     load_festival,
     print_summary,
     print_venues,
     print_programme,
     print_artist,
     print_now,
-    save_festival,
+    cancel_performance,
 )
 
 
@@ -40,18 +41,17 @@ def main():
         print_artist(festival, args[1])
 
     elif len(args) == 2 and args[0] == "now":
-        print_now(festival, args[1])
+        print_now(festival, datetime.fromisoformat(args[1]))
 
     elif args == ["add"]:
         print("Adding a performance is not available through this command yet.")
 
-
     elif len(args) == 2 and args[0] == "cancel":
-
         try:
             cancel_performance(festival, args[1])
             print("Performance cancelled successfully.")
-        except ValueError as error:
+
+        except FestivalError as error:
             print(f"Error: {error}")
 
 
@@ -62,7 +62,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, OSError, KeyError, TypeError) as error:
+    except (FestivalError, ValueError, OSError, KeyError, TypeError) as error:
         print(f"Error: {error}")
         sys.exit(1)
 
