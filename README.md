@@ -77,3 +77,9 @@ block starts where the previous one ended.
    ```
 
 Then [step 00](B1/E00_start.md) creates your project, in its own folder.
+
+\## Festival Data Classes (Step 07) 
+- \*\*Venue\*\*: Represents a venue with its slug, name, capacity, and address.
+- \*\*Artist\*\*: Represents a performer with their slug and full name. 
+- \*\*Performance\*\*: Encapsulates show details and dynamically computes properties such as \`end\` time,
+  \`festival\_day\` (handling late-night shows), and whether a given artist \`involves\` this performance.

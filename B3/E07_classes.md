@@ -23,7 +23,6 @@ computed from it belong together: that is a class.
 
 On the side: [side/e07_movie.py](side/e07_movie.py): screenings and cinemas,
 with a property, a check in `__init__`, a view for an API, a dataclass.
-
 ## Do
 
 1. Decide which classes you need for the data of the file, and what each one
