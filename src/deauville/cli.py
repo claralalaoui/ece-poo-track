@@ -7,14 +7,25 @@ data file (handy for tests and for the trainer).
 import argparse
 import sys
 from collections.abc import Callable, Sequence
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from deauville.errors import FestivalError
+from deauville.errors import FestivalError, InvalidValueError
 from deauville.festival import Festival
+from deauville.performances import Performance
 from deauville.storage import JsonStorage, Storage
 
-# --- Printing. ---
+# --- Printing: the formats of the course (steps 03 to 05). ---
+
+
+def time_range(performance: Performance) -> str:
+    """`20:30-21:50`: the start and the end of a performance."""
+    return f"{performance.start_datetime:%H:%M}-{performance.end:%H:%M}"
+
+
+def programme_line(performance: Performance, ending: str) -> str:
+    """`20:30-21:50 | Grand Casino | Tall Tales (solo)`."""
+    return f"{time_range(performance)} | {performance.venue.name} | {ending}"
 
 
 def print_summary(festival: Festival) -> None:
@@ -23,32 +34,59 @@ def print_summary(festival: Festival) -> None:
 
 
 def print_venues(festival: Festival) -> None:
-    """Print all festival venues."""
+    """Print every venue with its slug and seats, then the total."""
     for venue in festival.venues:
-        print(venue)
+        print(f"{venue.slug}: {venue.name}, {venue.capacity} seats")
+    print(f"Total: {sum(venue.capacity for venue in festival.venues)} seats")
 
 
-def print_programme(festival: Festival, day: Optional[str] = None) -> None:
-    """Print the festival programme."""
-    for performance in festival.programme(day=day):
-        print(performance)
+def parse_day(text: str, festival: Festival) -> date:
+    """A day of the festival, or a clear message about what is wrong."""
+    try:
+        day = date.fromisoformat(text)
+    except ValueError:
+        raise InvalidValueError(f"{text!r} is not a day, use YYYY-MM-DD.") from None
+    if not festival.first_day <= day.isoformat() <= festival.last_day:
+        raise InvalidValueError(f"{day} is not a day of the festival.")
+    return day
+
+
+def print_programme(festival: Festival, day: date) -> None:
+    """Print the programme of a festival day, with starts and ends."""
+    print(f"Programme for {day:%A} {day.day} {day:%B}:")
+    for performance in festival.programme(day=day.isoformat()):
+        print(programme_line(performance, f"{performance.title} ({performance.kind})"))
 
 
 def print_artist(festival: Festival, artist_slug: str) -> None:
-    """Print performances involving an artist."""
+    """Print an artist and their performances, with their role in each."""
+    print(festival.get_artist(artist_slug).name)
     for performance in festival.performances_by_artist(artist_slug):
-        print(performance)
+        day = date.fromisoformat(performance.festival_day)
+        role = performance.role_of(artist_slug)
+        print(
+            f"{day:%a} {day.day} "
+            + programme_line(performance, f"{performance.title} ({role})")
+        )
 
 
 def print_now(festival: Festival, at: datetime) -> None:
-    """Print performances playing now and coming up next."""
-    print("On stage now:")
-    for performance in festival.now_playing(at):
-        print(performance)
-
+    """Print what is on stage at a moment, then the next three performances."""
+    print(f"On stage at {at:%Y-%m-%d %H:%M}:")
+    playing = festival.now_playing(at)
+    for performance in playing:
+        print(
+            f"- {performance.title} at {performance.venue.name}, "
+            f"until {performance.end:%H:%M}"
+        )
+    if not playing:
+        print("- nothing")
     print("Up next:")
     for performance in festival.up_next(at):
-        print(performance)
+        print(
+            "- "
+            + programme_line(performance, f"{performance.title} ({performance.kind})")
+        )
 
 
 # --- Commands: each one gets the storage and the parsed arguments. ---
@@ -63,7 +101,8 @@ def command_venues(storage: Storage, args: argparse.Namespace) -> None:
 
 
 def command_programme(storage: Storage, args: argparse.Namespace) -> None:
-    print_programme(storage.load(), args.day)
+    festival = storage.load()
+    print_programme(festival, parse_day(args.day, festival))
 
 
 def command_artist(storage: Storage, args: argparse.Namespace) -> None:
@@ -75,14 +114,35 @@ def command_now(storage: Storage, args: argparse.Namespace) -> None:
 
 
 def command_add(storage: Storage, args: argparse.Namespace) -> None:
-    print("Adding a performance is available in the admin: deauville serve.")
+    """Ask the questions of step 05, schedule a solo show if the rules allow."""
+    festival = storage.load()
+    title = input("Title: ")
+    artist = input("Artist (slug): ")
+    venue = input("Venue (slug): ")
+    start = input("Start (YYYY-MM-DDTHH:MM): ")
+    duration: object = input("Duration (minutes): ")
+    if isinstance(duration, str) and duration.strip().isdigit():
+        duration = int(duration)  # otherwise the rules say what is wrong
+    performance = festival.build_performance(
+        {
+            "kind": "solo",
+            "title": title,
+            "artist": artist,
+            "venue": venue,
+            "start": start,
+            "duration_minutes": duration,
+        }
+    )
+    festival.add(performance)
+    storage.save(festival)
+    print(f"Added: {performance.id}")
 
 
 def command_cancel(storage: Storage, args: argparse.Namespace) -> None:
     festival = storage.load()
-    festival.cancel(args.performance_id)
+    performance = festival.cancel(args.performance_id)
     storage.save(festival)
-    print("Performance cancelled successfully.")
+    print(f"Cancelled: {performance.title}")
 
 
 def command_serve(storage: Storage, args: argparse.Namespace) -> None:
@@ -143,7 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
     add("now", command_now, "what is on stage at a given time").add_argument(
         "at", type=parse_datetime, help="YYYY-MM-DDTHH:MM"
     )
-    add("add", command_add, "add a performance (see the admin)")
+    add("add", command_add, "add a solo show (asks the questions)")
     add("cancel", command_cancel, "cancel a performance").add_argument(
         "performance_id", help="id of the performance"
     )

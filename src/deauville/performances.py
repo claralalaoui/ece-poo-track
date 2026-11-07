@@ -118,6 +118,10 @@ class Performance(ABC):
         """One line about who is on stage."""
 
     @abstractmethod
+    def role_of(self, artist_slug: str) -> str:
+        """What this artist is here: solo, host, act or teacher."""
+
+    @abstractmethod
     def _own_view(self) -> dict:
         """The fields of the API view that only this kind has."""
 
@@ -228,6 +232,9 @@ class SoloShow(Performance):
     def artists(self) -> list[Artist]:
         return [self._artist]
 
+    def role_of(self, artist_slug: str) -> str:
+        return "solo"
+
     def summary(self) -> str:
         return self._artist.name
 
@@ -298,6 +305,9 @@ class Lineup(Performance):
     @property
     def artists(self) -> list[Artist]:
         return [self._host, *self._acts]
+
+    def role_of(self, artist_slug: str) -> str:
+        return "host" if self._host.slug == artist_slug else "act"
 
     def summary(self) -> str:
         names = ", ".join(act.name for act in self._acts)
@@ -386,6 +396,9 @@ class Workshop(Performance):
         if self.places_left == 0:
             raise ConflictError(f"{self.title} is full ({self.places} places).")
         self._participants.append(name)
+
+    def role_of(self, artist_slug: str) -> str:
+        return "teacher"
 
     def summary(self) -> str:
         return (

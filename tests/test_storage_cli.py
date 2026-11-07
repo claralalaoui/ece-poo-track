@@ -11,6 +11,7 @@ import io
 import json
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -120,13 +121,18 @@ def test_saving_leaves_no_temporary_file(copy_of_data):
 def test_no_command_prints_the_summary(copy_of_data):
     code, output = run("--data", str(copy_of_data))
     assert code == 0
-    assert "Dates: 2027-06-10 to 2027-06-13" in output
+    assert output == (
+        "Deauville Festival du Rire 2027\n"
+        "From 2027-06-10 to 2027-06-13\n"
+        "4 venues, 12 artists, 23 performances\n"
+    )
 
 
 def test_programme_of_a_day(copy_of_data):
     code, output = run("--data", str(copy_of_data), "programme", "2027-06-11")
     assert code == 0
-    assert "20:30 - Tall Tales (grand-casino)" in output
+    assert output.startswith("Programme for Friday 11 June:\n")
+    assert "20:30-21:50 | Grand Casino | Tall Tales (solo)" in output
 
 
 def test_the_option_data_works_after_the_command_too(copy_of_data):
@@ -146,7 +152,7 @@ def test_cancel_changes_the_file(copy_of_data):
         "--data", str(copy_of_data), "cancel", "grand-casino-2027-06-11-2030"
     )
     assert code == 0
-    assert "cancelled" in output
+    assert output == "Cancelled: Tall Tales\n"
     assert "grand-casino-2027-06-11-2030" not in copy_of_data.read_text("utf-8")
 
 
@@ -168,3 +174,119 @@ def test_the_real_data_file_is_never_written(copy_of_data):
     before = DATA_FILE.read_bytes()
     run("--data", str(copy_of_data), "cancel", "grand-casino-2027-06-11-2030")
     assert DATA_FILE.read_bytes() == before
+
+
+# --- The outputs of the course sheets (steps 03 to 05), word for word. ---
+
+
+def test_venues_with_their_slug_and_the_total(copy_of_data):
+    code, output = run("--data", str(copy_of_data), "venues")
+    assert code == 0
+    assert output == (
+        "grand-casino: Grand Casino, 650 seats\n"
+        "theatre-des-planches: Théâtre des Planches, 320 seats\n"
+        "le-kiosque: Le Kiosque, 120 seats\n"
+        "la-cabane: La Cabane, 40 seats\n"
+        "Total: 1130 seats\n"
+    )
+
+
+def test_an_artist_with_the_festival_day_and_the_role(copy_of_data):
+    code, output = run("--data", str(copy_of_data), "artist", "max-pellerin")
+    assert code == 0
+    assert output == (
+        "Max Pellerin\n"
+        "Thu 10 20:30-22:30 | Grand Casino | Opening Gala (act)\n"
+        "Fri 11 23:30-00:30 | Le Kiosque | Late Laughs (solo)\n"
+        "Sat 12 21:00-22:40 | Théâtre des Planches | Deauville Comedy Club (host)\n"
+        "Sun 13 20:30-22:40 | Grand Casino | Closing Gala (act)\n"
+    )
+
+
+def test_a_teacher_has_the_role_teacher(copy_of_data):
+    code, output = run("--data", str(copy_of_data), "artist", "ines-moreau")
+    assert code == 0
+    assert "(teacher)" in output
+
+
+def test_after_hours_is_on_the_programme_of_friday(copy_of_data):
+    code, output = run("--data", str(copy_of_data), "programme", "2027-06-11")
+    assert code == 0
+    assert output.splitlines()[-1] == "01:00-02:00 | Le Kiosque | After Hours (lineup)"
+
+
+def test_now_and_up_next(copy_of_data):
+    code, output = run("--data", str(copy_of_data), "now", "2027-06-11T21:00")
+    assert code == 0
+    assert output == (
+        "On stage at 2027-06-11 21:00:\n"
+        "- Tall Tales at Grand Casino, until 21:50\n"
+        "Up next:\n"
+        "- 21:30-22:40 | Théâtre des Planches | Straight Face (solo)\n"
+        "- 23:30-00:30 | Le Kiosque | Late Laughs (solo)\n"
+        "- 01:00-02:00 | Le Kiosque | After Hours (lineup)\n"
+    )
+
+
+def test_a_bad_day_says_what_is_wrong(copy_of_data):
+    code, output = run("--data", str(copy_of_data), "programme", "June-11")
+    assert code == 1
+    assert output == "Error: 'June-11' is not a day, use YYYY-MM-DD.\n"
+
+
+def test_a_day_outside_the_festival_says_so(copy_of_data):
+    code, output = run("--data", str(copy_of_data), "programme", "2027-06-14")
+    assert code == 1
+    assert output == "Error: 2027-06-14 is not a day of the festival.\n"
+
+
+def add_with(copy_of_data: Path, *answers: str) -> tuple[int, str]:
+    """Run `deauville add`, answering its five questions."""
+    with patch("builtins.input", side_effect=list(answers)):
+        return run("--data", str(copy_of_data), "add")
+
+
+@pytest.mark.parametrize(
+    ("answers", "message"),
+    [
+        (
+            ("Too Late", "karim-benali", "le-kiosque", "2027-06-12T02:15", "30"),
+            "Error: Le Kiosque is busy with After Hours (2027-06-12 01:00-02:00).",
+        ),
+        (
+            ("X", "max-pellerin", "la-cabane", "2027-06-11T23:00", "30"),
+            "Error: Max Pellerin is on stage in Late Laughs.",
+        ),
+        (
+            ("X", "karim-benali", "la-cabane", "2027-06-14T08:00", "30"),
+            "Error: 2027-06-14 is not a day of the festival.",
+        ),
+        (
+            ("X", "karim-benali", "la-cabane", "2027-06-13T08:00", "half an hour"),
+            "Error: 'half an hour' is not a number of minutes.",
+        ),
+    ],
+)
+def test_add_refuses_with_a_sentence(copy_of_data, answers, message):
+    before = copy_of_data.read_text("utf-8")
+    code, output = add_with(copy_of_data, *answers)
+    assert code == 1
+    assert output == message + "\n"
+    assert copy_of_data.read_text("utf-8") == before
+
+
+def test_add_then_cancel(copy_of_data):
+    answers = ("Morning Coffee", "karim-benali", "la-cabane", "2027-06-13T08:00", "30")
+    code, output = add_with(copy_of_data, *answers)
+    assert code == 0
+    assert output == "Added: la-cabane-2027-06-13-0800\n"
+    code, output = run("--data", str(copy_of_data), "programme", "2027-06-13")
+    assert output.splitlines()[1] == "08:00-08:30 | La Cabane | Morning Coffee (solo)"
+    code, output = run(
+        "--data", str(copy_of_data), "cancel", "la-cabane-2027-06-13-0800"
+    )
+    assert output == "Cancelled: Morning Coffee\n"
+
+
+def test_the_name_of_the_festival_has_no_stray_characters(data):
+    assert data["name"] == "Deauville Festival du Rire 2027"

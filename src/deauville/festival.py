@@ -238,8 +238,7 @@ class Festival:
     def __str__(self) -> str:
         return (
             f"{self._name}\n"
-            f"Dates: {self._first_day} to {self._last_day}\n"
-            f"Venues: {len(self._venues)}\n"
-            f"Artists: {len(self._artists)}\n"
-            f"Performances: {len(self._performances)}"
+            f"From {self._first_day} to {self._last_day}\n"
+            f"{len(self._venues)} venues, {len(self._artists)} artists, "
+            f"{len(self._performances)} performances"
         )

@@ -25,6 +25,7 @@ uv run deauville venues                # the venues
 uv run deauville programme 2027-06-11  # the programme of a day
 uv run deauville artist nora-lebrun    # an artist and their performances
 uv run deauville now 2027-06-10T21:00  # what is playing, what is next
+uv run deauville add                   # asks 5 questions, adds a solo show
 uv run deauville cancel <id>           # cancel a performance
 uv run deauville --help                # everything else (add, ...)
 ```
