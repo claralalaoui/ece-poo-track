@@ -1,24 +1,27 @@
+"""Steps 09 and 10: the three kinds, their rules, and the doors that are closed.
+
+    uv run pytest tests/test_festival.py -v
+
+Nothing here writes `data/festival.json`: the festival is built in memory, and
+the saving tests use a folder of their own.
+"""
+
 from pathlib import Path
 
 import pytest
 
-from festival import (
-    Artist,
+from deauville.errors import (
     ConflictError,
-    Festival,
     FestivalError,
     InvalidDataError,
     InvalidPerformanceError,
     InvalidValueError,
-    Lineup,
     NotFoundError,
-    Performance,
-    SoloShow,
-    Venue,
-    Workshop,
-    load_festival,
-    save_festival,
 )
+from deauville.festival import Festival
+from deauville.models import Artist, Venue
+from deauville.performances import Lineup, Performance, SoloShow, Workshop
+from deauville.storage import JsonStorage
 
 ROOT = Path(__file__).parent.parent
 NAMES = [
@@ -120,7 +123,7 @@ def test_each_kind_writes_its_own_summary(festival):
 
 
 def test_the_summaries_of_the_data_file():
-    festival = load_festival(ROOT / "data" / "festival.json")
+    festival = JsonStorage(ROOT / "data" / "festival.json").load()
     summaries = {
         "le-kiosque-2027-06-12-0100": (
             "hosted by Tom Vasseur, with Hugo Lemaire, Maya Choukri"
@@ -204,9 +207,10 @@ def test_every_kind_has_its_own_fields_in_its_view(festival):
 
 
 def test_the_kind_chooses_the_class_in_one_place_only():
-    source = (ROOT / "festival.py").read_text(encoding="utf-8")
-    assert "kind ==" not in source
-    assert "kind !=" not in source
+    for path in (ROOT / "src" / "deauville").glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "kind ==" not in source, path.name
+        assert "kind !=" not in source, path.name
 
 
 def test_an_unknown_kind_is_refused(festival):
@@ -416,8 +420,8 @@ def test_what_is_changed_is_saved(festival, tmp_path):
     festival.add(workshop(festival, 12, participants=["Lou M."]))
     path = tmp_path / "festival.json"
 
-    save_festival(festival, path)
-    again = load_festival(path)
+    JsonStorage(path).save(festival)
+    again = JsonStorage(path).load()
 
     assert [p.id for p in again.performances] == [p.id for p in festival.performances]
     assert again.get_artist("zoe-tanguy").name == "Zoé Tanguy"
@@ -428,7 +432,7 @@ def test_what_is_changed_is_saved(festival, tmp_path):
 
 def test_the_data_file_has_no_empty_fields_of_other_kinds(festival, tmp_path):
     path = tmp_path / "festival.json"
-    save_festival(festival, path)
+    JsonStorage(path).save(festival)
     assert "null" not in path.read_text(encoding="utf-8")
 
 
@@ -436,7 +440,7 @@ def test_a_damaged_file_is_an_error_of_the_family(tmp_path):
     path = tmp_path / "festival.json"
     path.write_text("{ not json", encoding="utf-8")
     with pytest.raises(InvalidDataError):
-        load_festival(path)
+        JsonStorage(path).load()
     path.write_text('{"name": "x"}', encoding="utf-8")
     with pytest.raises(InvalidDataError):
-        load_festival(path)
+        JsonStorage(path).load()

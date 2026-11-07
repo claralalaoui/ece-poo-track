@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 
 [[package]]
@@ -52,9 +52,9 @@ wheels = [
 ]
 
 [[package]]
-name = "deauville-track"
+name = "deauville"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "uvicorn" },

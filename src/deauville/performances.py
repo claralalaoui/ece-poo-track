@@ -1,90 +1,17 @@
-"""The festival: venues, artists, three kinds of performances and the rules.
+"""Performances: what every kind shares, then one class per kind."""
 
-Everything that changes the schedule goes through a method of `Festival`, so
-the rules always apply, whether the call comes from the command line or the API.
-"""
-
-import json
-import os
-import re
-import unicodedata
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING
 
-DATA_FILE = "data/festival.json"
-BREAK = timedelta(minutes=30)  # between two performances of a venue or an artist
+from deauville.errors import (
+    ConflictError,
+    InvalidPerformanceError,
+)
+from deauville.models import Artist, Venue, tidy
 
-
-# --- Errors: one family, so a caller can catch all of it or only one kind. ---
-
-
-class FestivalError(Exception):
-    """Every error of the festival. `except FestivalError` catches them all."""
-
-
-class NotFoundError(FestivalError):
-    """An id or a slug that does not exist (HTTP 404)."""
-
-
-class ConflictError(FestivalError):
-    """Valid in itself, but it clashes with what is already there (HTTP 409)."""
-
-
-class InvalidValueError(FestivalError):
-    """A value that is wrong whatever the festival contains (HTTP 422)."""
-
-
-class InvalidPerformanceError(InvalidValueError):
-    """A performance that does not respect the rules of its kind."""
-
-
-class InvalidDataError(FestivalError):
-    """The data file cannot be used (HTTP 500)."""
-
-
-# --- Venues and artists: small, and frozen so nobody can change them. ---
-
-
-def make_slug(name: str) -> str:
-    """Convert a name into a URL-friendly slug."""
-    name = unicodedata.normalize("NFKD", name)
-    name = name.encode("ascii", "ignore").decode("ascii")
-    name = name.lower()
-    name = re.sub(r"[^a-z0-9]+", "-", name)
-    return name.strip("-")
-
-
-@dataclass(frozen=True)
-class Venue:
-    name: str
-    capacity: int
-    address: str = ""
-
-    @property
-    def slug(self) -> str:
-        return make_slug(self.name)
-
-
-@dataclass(frozen=True)
-class Artist:
-    name: str
-    bio: str = ""
-    photo_url: str = ""
-
-    @property
-    def slug(self) -> str:
-        return make_slug(self.name)
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Artist):
-            return NotImplemented
-        return self.slug == other.slug
-
-    def __hash__(self) -> int:
-        return hash(self.slug)
+if TYPE_CHECKING:
+    from deauville.festival import Festival
 
 
 def _required(data: dict, field: str):
@@ -97,14 +24,6 @@ def _required(data: dict, field: str):
 
 def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
-
-
-def _tidy(name: str) -> str:
-    """A name without extra spaces: 'Lou   M.' -> 'Lou M.'."""
-    return " ".join(str(name).split())
-
-
-# --- Performances: what every kind shares, then one class per kind. ---
 
 
 class Performance(ABC):
@@ -137,9 +56,7 @@ class Performance(ABC):
                 f"{duration_minutes!r} is not a number of minutes."
             )
         if not 1 <= duration_minutes <= 360:
-            raise InvalidPerformanceError(
-                "Duration must be between 1 and 360 minutes."
-            )
+            raise InvalidPerformanceError("Duration must be between 1 and 360 minutes.")
         self._title = str(title).strip()
         self._venue = venue
         self._start = start
@@ -416,7 +333,7 @@ class Workshop(Performance):
             raise InvalidPerformanceError("A workshop needs at least one place.")
         self._teacher = teacher
         self._max_participants = max_participants
-        names = [_tidy(name) for name in participants]
+        names = [tidy(name) for name in participants]
         keys = [name.casefold() for name in names]
         if "" in names:
             raise InvalidPerformanceError("A participant needs a name.")
@@ -455,7 +372,7 @@ class Workshop(Performance):
         return [self._teacher]
 
     def register(self, name: str) -> None:
-        name = _tidy(name)
+        name = tidy(name)
         if not name:
             raise InvalidPerformanceError("A participant needs a name.")
         if name.casefold() in (other.casefold() for other in self._participants):
@@ -502,294 +419,3 @@ KINDS: dict[str, type[Performance]] = {
     "lineup": Lineup,
     "workshop": Workshop,
 }
-
-
-# --- The festival: the only way in, so the rules always apply. ---
-
-
-class Festival:
-    def __init__(
-        self,
-        name: str,
-        first_day: str,
-        last_day: str,
-        venues: list[Venue] = (),
-        artists: list[Artist] = (),
-    ) -> None:
-        self._name = name
-        self._first_day = first_day
-        self._last_day = last_day
-        self._venues = list(venues)
-        self._artists = list(artists)
-        self._performances: list[Performance] = []
-
-    # Read-only. The collections come back as copies.
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def first_day(self) -> str:
-        return self._first_day
-
-    @property
-    def last_day(self) -> str:
-        return self._last_day
-
-    @property
-    def venues(self) -> list[Venue]:
-        return list(self._venues)
-
-    @property
-    def artists(self) -> list[Artist]:
-        return list(self._artists)
-
-    @property
-    def performances(self) -> list[Performance]:
-        return list(self._performances)
-
-    # Finding.
-
-    def get_venue(self, slug: str) -> Venue:
-        for venue in self._venues:
-            if venue.slug == slug:
-                return venue
-        raise NotFoundError(f"No venue '{slug}'.")
-
-    def get_artist(self, slug: str) -> Artist:
-        for artist in self._artists:
-            if artist.slug == slug:
-                return artist
-        raise NotFoundError(f"No artist '{slug}'.")
-
-    def get_performance(self, performance_id: str) -> Performance:
-        for performance in self._performances:
-            if performance.id == performance_id:
-                return performance
-        raise NotFoundError(f"No performance '{performance_id}'.")
-
-    def resolve_venue(self, slug: str) -> Venue:
-        """The venue of a slug found inside a body or a file: unknown = invalid."""
-        try:
-            return self.get_venue(slug)
-        except NotFoundError:
-            raise InvalidPerformanceError(f"Unknown venue '{slug}'.") from None
-
-    def resolve_artist(self, slug: str) -> Artist:
-        try:
-            return self.get_artist(slug)
-        except NotFoundError:
-            raise InvalidPerformanceError(f"Unknown artist '{slug}'.") from None
-
-    def build_performance(self, data: dict) -> Performance:
-        """A performance of the right class from a dict. Nothing is added yet."""
-        kind = data.get("kind")
-        if kind not in KINDS:
-            raise InvalidPerformanceError(
-                f"Unknown kind {kind!r}, use one of: {', '.join(KINDS)}."
-            )
-        return KINDS[kind].from_dict(data, self)
-
-    # Changing: each method checks everything first, then changes.
-
-    def add(self, performance: Performance) -> None:
-        self._check(performance)
-        self._performances.append(performance)
-
-    def replace(self, performance_id: str, new: Performance) -> Performance:
-        """Put `new` in the place of a performance. A refusal changes nothing."""
-        old = self.get_performance(performance_id)
-        self._check(new, ignore=old)  # a show may keep its own slot
-        self._performances[self._performances.index(old)] = new
-        return new
-
-    def cancel(self, performance_id: str) -> Performance:
-        performance = self.get_performance(performance_id)
-        self._performances.remove(performance)
-        return performance
-
-    def register(self, performance_id: str, name: str) -> Performance:
-        performance = self.get_performance(performance_id)
-        performance.register(name)
-        return performance
-
-    def add_artist(self, name: str, bio: str = "", photo_url: str = "") -> Artist:
-        artist = Artist(name=_tidy(name), bio=bio or "", photo_url=photo_url or "")
-        if artist.slug == "":
-            raise InvalidValueError("An artist needs a name with letters or digits.")
-        for existing in self._artists:
-            if existing == artist:
-                raise ConflictError(f"{existing.name} already exists.")
-        self._artists.append(artist)
-        return artist
-
-    def _check(
-        self, performance: Performance, ignore: Optional[Performance] = None
-    ) -> None:
-        """The rules that need the whole festival."""
-        if performance.venue not in self._venues:
-            raise InvalidPerformanceError(f"Unknown venue '{performance.venue.slug}'.")
-        for artist in performance.artists:
-            if artist not in self._artists:
-                raise InvalidPerformanceError(f"Unknown artist '{artist.slug}'.")
-
-        day = performance.festival_day
-        if not self._first_day <= day <= self._last_day:
-            raise InvalidPerformanceError(f"{day} is not a day of the festival.")
-
-        for other in self._performances:
-            if other is ignore:
-                continue
-            too_close = (
-                performance.start_datetime < other.end + BREAK
-                and other.start_datetime < performance.end + BREAK
-            )
-            if not too_close:
-                continue
-            if other.venue.slug == performance.venue.slug:
-                when = f"{other.start_datetime:%Y-%m-%d %H:%M}-{other.end:%H:%M}"
-                raise ConflictError(
-                    f"{other.venue.name} is busy with {other.title} ({when})."
-                )
-            for artist in performance.artists:
-                if artist in other.artists:
-                    raise ConflictError(f"{artist.name} is on stage in {other.title}.")
-
-    # Reading.
-
-    def programme(
-        self, day: Optional[str] = None, venue: Optional[str] = None
-    ) -> list[Performance]:
-        return [
-            p
-            for p in sorted(self._performances)
-            if (day is None or p.festival_day == str(day))
-            and (venue is None or p.venue.slug == venue)
-        ]
-
-    def performances_by_artist(self, artist_slug: str) -> list[Performance]:
-        self.get_artist(artist_slug)  # unknown slug: NotFoundError
-        return sorted(p for p in self._performances if p.involves(artist_slug))
-
-    def now_playing(self, at: datetime) -> list[Performance]:
-        return [p for p in self._performances if p.start_datetime <= at < p.end]
-
-    def up_next(self, at: datetime) -> list[Performance]:
-        return sorted(p for p in self._performances if p.start_datetime > at)[:3]
-
-    def to_dict(self) -> dict:
-        """The dict written in the data file."""
-        return {
-            "name": self._name,
-            "first_day": self._first_day,
-            "last_day": self._last_day,
-            "venues": [
-                {"name": v.name, "capacity": v.capacity, "address": v.address}
-                for v in self._venues
-            ],
-            "artists": [
-                {"name": a.name, "bio": a.bio, "photo_url": a.photo_url}
-                for a in self._artists
-            ],
-            "performances": [p.to_dict() for p in self._performances],
-        }
-
-    def __str__(self) -> str:
-        return (
-            f"{self._name}\n"
-            f"Dates: {self._first_day} to {self._last_day}\n"
-            f"Venues: {len(self._venues)}\n"
-            f"Artists: {len(self._artists)}\n"
-            f"Performances: {len(self._performances)}"
-        )
-
-
-# --- The data file. ---
-
-
-def load_festival(path: Optional[Union[str, Path]] = None) -> Festival:
-    """Read the data file. The same rules apply as when an organiser adds."""
-    path = path or DATA_FILE
-    with open(path, encoding="utf-8") as file:
-        try:
-            data = json.load(file)
-        except json.JSONDecodeError as error:
-            raise InvalidDataError(f"{path} is not valid JSON: {error}.") from error
-    try:
-        festival = Festival(
-            name=data["name"],
-            first_day=data["first_day"],
-            last_day=data["last_day"],
-            venues=[Venue(**venue) for venue in data["venues"]],
-            artists=[Artist(**artist) for artist in data["artists"]],
-        )
-        for item in data["performances"]:
-            festival.add(festival.build_performance(item))
-    except FestivalError as error:
-        raise InvalidDataError(f"Damaged data file {path}: {error}") from error
-    except (KeyError, TypeError, AttributeError) as error:
-        raise InvalidDataError(f"Damaged data file {path}: {error!r}") from error
-    return festival
-
-
-def save_festival(
-    festival: Festival, path: Optional[Union[str, Path]] = None
-) -> None:
-    """Write the data file: all of it, or nothing (no half-written file)."""
-    path = Path(path or DATA_FILE)
-    temp = path.with_name(path.name + ".tmp")
-    with open(temp, "w", encoding="utf-8") as file:
-        json.dump(festival.to_dict(), file, ensure_ascii=False, indent=2)
-        file.write("\n")
-    os.replace(temp, path)
-
-
-def add_performance(festival: Festival, performance: Performance) -> None:
-    """Add a performance and save the festival."""
-    festival.add(performance)
-    save_festival(festival)
-
-
-def cancel_performance(festival: Festival, performance_id: str) -> Performance:
-    """Cancel a performance and save the festival."""
-    performance = festival.cancel(performance_id)
-    save_festival(festival)
-    return performance
-
-
-# --- Printing, for the command line. ---
-
-
-def print_summary(festival: Festival) -> None:
-    """Print a summary of the festival."""
-    print(festival)
-
-
-def print_venues(festival: Festival) -> None:
-    """Print all festival venues."""
-    for venue in festival.venues:
-        print(venue)
-
-
-def print_programme(festival: Festival, day: Optional[str] = None) -> None:
-    """Print the festival programme."""
-    for performance in festival.programme(day=day):
-        print(performance)
-
-
-def print_artist(festival: Festival, artist_slug: str) -> None:
-    """Print performances involving an artist."""
-    for performance in festival.performances_by_artist(artist_slug):
-        print(performance)
-
-
-def print_now(festival: Festival, at: datetime) -> None:
-    """Print performances playing now and coming up next."""
-    print("On stage now:")
-    for performance in festival.now_playing(at):
-        print(performance)
-
-    print("Up next:")
-    for performance in festival.up_next(at):
-        print(performance)
