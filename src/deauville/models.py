@@ -16,6 +16,8 @@ def make_slug(name: str) -> str:
 
 @dataclass(frozen=True)
 class Venue:
+    """A place with seats; it never changes once created."""
+
     name: str
     capacity: int
     address: str = ""
@@ -27,6 +29,8 @@ class Venue:
 
 @dataclass(frozen=True)
 class Artist:
+    """A performer; two artists are the same when they have the same slug."""
+
     name: str
     bio: str = ""
     photo_url: str = ""

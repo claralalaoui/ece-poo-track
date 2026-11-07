@@ -51,6 +51,8 @@ def status_of(error: FestivalError) -> int:
 
 
 class PerformanceIn(BaseModel):
+    """The JSON to add or replace a performance; the fields of the three kinds."""
+
     kind: str
     title: str
     venue: str
@@ -67,10 +69,14 @@ class PerformanceIn(BaseModel):
 
 
 class ParticipantIn(BaseModel):
+    """The JSON to register a participant."""
+
     name: str
 
 
 class ArtistIn(BaseModel):
+    """The JSON to add an artist."""
+
     name: str
     bio: str = ""
     photo_url: str = ""
@@ -108,7 +114,7 @@ def create_app(storage: Storage, web_dir: Optional[Path] = None) -> FastAPI:
     # --- Read. ---
 
     @app.get("/api/festival")
-    def get_festival():
+    def get_festival() -> dict:
         festival = storage.load()
 
         first_day = date.fromisoformat(festival.first_day)
@@ -127,7 +133,7 @@ def create_app(storage: Storage, web_dir: Optional[Path] = None) -> FastAPI:
         }
 
     @app.get("/api/venues")
-    def get_venues():
+    def get_venues() -> list[dict]:
         festival = storage.load()
 
         return [
@@ -141,7 +147,7 @@ def create_app(storage: Storage, web_dir: Optional[Path] = None) -> FastAPI:
         ]
 
     @app.get("/api/artists")
-    def get_artists():
+    def get_artists() -> list[dict]:
         festival = storage.load()
 
         artists = [
@@ -158,7 +164,7 @@ def create_app(storage: Storage, web_dir: Optional[Path] = None) -> FastAPI:
     def get_programme(
         day: Optional[date] = None,
         venue: Optional[str] = None,
-    ):
+    ) -> list[dict]:
         festival = storage.load()
 
         if venue is not None:
@@ -172,11 +178,11 @@ def create_app(storage: Storage, web_dir: Optional[Path] = None) -> FastAPI:
         return [performance.to_view() for performance in performances]
 
     @app.get("/api/performances/{performance_id}")
-    def get_performance(performance_id: str):
+    def get_performance(performance_id: str) -> dict:
         return storage.load().get_performance(performance_id).to_view()
 
     @app.get("/api/artists/{slug}")
-    def get_artist(slug: str):
+    def get_artist(slug: str) -> dict:
         festival = storage.load()
         artist = festival.get_artist(slug)
         performances = festival.performances_by_artist(slug)
@@ -190,7 +196,7 @@ def create_app(storage: Storage, web_dir: Optional[Path] = None) -> FastAPI:
         }
 
     @app.get("/api/now")
-    def get_now(at: Optional[datetime] = None):
+    def get_now(at: Optional[datetime] = None) -> dict:
         festival = storage.load()
         current_time = at or datetime.now()
 

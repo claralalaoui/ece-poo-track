@@ -6,7 +6,7 @@ data file (handy for tests and for the trainer).
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Optional
 
@@ -124,7 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.set_defaults(command=command_summary)
     commands = parser.add_subparsers(title="commands", metavar="command")
 
-    def add(name: str, function, help_text: str) -> argparse.ArgumentParser:
+    def add(
+        name: str, function: Callable[..., None], help_text: str
+    ) -> argparse.ArgumentParser:
         sub = commands.add_parser(
             name, help=help_text, description=help_text, parents=[common]
         )

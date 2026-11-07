@@ -23,6 +23,8 @@ BREAK = timedelta(minutes=30)  # between two performances of a venue or an artis
 
 
 class Festival:
+    """The festival: its venues, artists and schedule, and the rules that guard it."""
+
     def __init__(
         self,
         name: str,

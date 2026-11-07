@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from deauville.errors import (
     ConflictError,
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from deauville.festival import Festival
 
 
-def _required(data: dict, field: str):
+def _required(data: dict, field: str) -> Any:
     """The value of a field of a dict, or an error that names the field."""
     value = data.get(field)
     if value is None:
@@ -196,6 +196,8 @@ class Performance(ABC):
 
 
 class SoloShow(Performance):
+    """One artist alone on stage, with a minimum age."""
+
     kind = "solo"
 
     def __init__(
@@ -246,6 +248,8 @@ class SoloShow(Performance):
 
 
 class Lineup(Performance):
+    """A host and several acts, one after the other, in one evening."""
+
     kind = "lineup"
     ACT_MINUTES = 10  # each act
     HOST_MINUTES = 3  # the host, between two acts
@@ -315,6 +319,8 @@ class Lineup(Performance):
 
 
 class Workshop(Performance):
+    """A teacher and a limited number of participants."""
+
     kind = "workshop"
 
     def __init__(

@@ -354,9 +354,7 @@ def test_replace_in_a_busy_slot_is_409_and_changes_nothing(client, copy_of_data)
     assert client.get("/api/performances/le-kiosque-2027-06-10-1200").status_code == 200
 
 
-def test_replace_with_an_invalid_value_is_422_and_changes_nothing(
-    client, copy_of_data
-):
+def test_replace_with_an_invalid_value_is_422_and_changes_nothing(client, copy_of_data):
     client.post("/api/performances", json=solo_body())
     before = file_content(copy_of_data)
     response = client.put(
@@ -540,5 +538,3 @@ def test_the_real_data_file_is_never_written(client):
     client.post("/api/performances", json=solo_body())
     client.delete("/api/performances/la-cabane-2027-06-11-1030")
     assert DATA_FILE.read_bytes() == before
-
-
