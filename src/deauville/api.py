@@ -87,6 +87,13 @@ def create_app(storage: Storage, web_dir: Optional[Path] = None) -> FastAPI:
             status_code=status_of(error), content={"detail": str(error)}
         )
 
+    @app.exception_handler(OSError)
+    def file_error(request: Request, error: OSError) -> JSONResponse:
+        """The data file cannot be read or written: the server's fault, a 500."""
+        return JSONResponse(
+            status_code=500, content={"detail": "The data file cannot be used."}
+        )
+
     # One writer at a time, and the storage is written only if nothing was refused.
     lock = threading.Lock()
 
